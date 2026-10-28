@@ -3,103 +3,118 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 지진 지도</title>
+    <title>제주 여행 추천 에이전트</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <style>
-        body { margin: 0; font-family: sans-serif; background: #0b1020; color: #e8ecf8; }
-        #bar { padding: 10px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        h1 { font-size: 18px; margin: 0 8px 0 0; }
-        select, button { padding: 5px 8px; border-radius: 6px; border: 1px solid #3a4468; background: #161d36; color: #e8ecf8; }
-        #stats { padding: 0 12px 8px; font-size: 14px; }
-        #stats b { color: #ffd166; }
-        #wrap { position: relative; }
-        #map { height: calc(100vh - 100px); background: #0b1020; }
-        .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
-        #legend { position: absolute; right: 10px; bottom: 24px; z-index: 1000; background: rgba(11,16,32,.85);
-                  padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.7; }
-        #legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; }
+        #chat { width: 420px; max-width: 50%; display: flex; flex-direction: column; border-right: 1px solid #ddd; }
+        #log { flex: 1; overflow-y: auto; padding: 12px; }
+        .msg { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; line-height: 1.5; font-size: 14px; }
+        .user { background: #e3f0ff; margin-left: 40px; }
+        .bot { background: #f3f3f3; margin-right: 20px; }
+        .tools { font-size: 12px; color: #666; margin: -4px 0 10px; }
+        #form { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #ddd; }
+        #q { flex: 1; padding: 8px; }
+        #map { flex: 1; }
+        @media (max-width: 700px) { body { flex-direction: column-reverse; } #chat { width: 100%; max-width: 100%; height: 60%; } #map { height: 40%; } }
     </style>
 </head>
 <body>
-    <div id="bar">
-        <h1>🌍 실시간 지진 지도</h1>
-        <select id="feed">
-            <option value="all_hour">지난 1시간 (전체)</option>
-            <option value="all_day" selected>지난 24시간 (전체)</option>
-            <option value="4.5_week">지난 7일 (규모 4.5 이상)</option>
-        </select>
-        <button id="reload">새로고침</button>
-    </div>
-    <div id="stats">불러오는 중…</div>
-    <div id="wrap">
-        <div id="map"></div>
-        <div id="legend">
-            <b>깊이</b><br>
-            <i style="background:#ff4d4d"></i>0~30km (얕음)<br>
-            <i style="background:#ffa94d"></i>30~70km<br>
-            <i style="background:#ffe066"></i>70~150km<br>
-            <i style="background:#4dd2ff"></i>150~300km<br>
-            <i style="background:#9b6bff"></i>300km~ (깊음)<br>
-            <span>원이 클수록 규모가 커요</span>
+    <div id="chat">
+        <div id="log">
+            <div class="msg bot">안녕하세요! 제주 여행 추천 에이전트예요. 날씨와 장소 목록을 직접 조회해서 추천해 드려요.
+예) "내일 서귀포에서 가족이랑 갈 만한 곳 추천해줘"</div>
         </div>
+        <form id="form">
+            <input id="q" placeholder="어디서 뭘 하고 싶으세요?" autocomplete="off">
+            <button>보내기</button>
+        </form>
     </div>
+    <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const URL_BASE = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/";
+        // jeju_spots.json 에 좌표가 없어서 지역 중심 근처에 대략 찍는다.
+        const CENTERS = {
+            "동쪽(성산)": [33.4580, 126.9420], "동쪽(구좌)": [33.5200, 126.8500],
+            "제주시": [33.4996, 126.5312], "서쪽(한림)": [33.4140, 126.2670],
+            "서쪽(안덕)": [33.2600, 126.3100], "서귀포": [33.2541, 126.5601],
+        };
 
-        const map = L.map("map", { worldCopyJump: true }).setView([20, 140], 2);
+        const map = L.map("map").setView([33.38, 126.55], 10);
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap contributors | 데이터: USGS",
-            maxZoom: 10,
-            className: "dark-tiles",
+            attribution: "&copy; OpenStreetMap contributors",
         }).addTo(map);
         const layer = L.layerGroup().addTo(map);
 
-        const colorByDepth = (km) =>
-            km < 30 ? "#ff4d4d" : km < 70 ? "#ffa94d" : km < 150 ? "#ffe066" : km < 300 ? "#4dd2ff" : "#9b6bff";
+        const jitter = (name, k) => {
+            let h = 0;
+            for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 1000;
+            return ((h + k * 377) % 1000) / 1000 * 0.06 - 0.03;
+        };
 
-        async function load() {
-            const feed = document.getElementById("feed").value;
-            const stats = document.getElementById("stats");
-            stats.textContent = "불러오는 중…";
-            try {
-                const res = await fetch(URL_BASE + feed + ".geojson");
-                const data = await res.json();
-                layer.clearLayers();
-
-                let strongest = null;
-                for (const f of data.features) {
-                    const [lng, lat, depth] = f.geometry.coordinates;
-                    const { mag, place, time } = f.properties;
-                    if (mag == null) continue;
-                    if (!strongest || mag > strongest.properties.mag) strongest = f;
-
-                    L.circleMarker([lat, lng], {
-                        radius: Math.max(3, mag * 3.2),
-                        color: colorByDepth(depth),
-                        fillColor: colorByDepth(depth),
-                        fillOpacity: 0.45,
-                        weight: 1.5,
-                    }).addTo(layer).bindPopup(
-                        `<b>규모 ${mag}</b><br>${place}<br>깊이 ${depth.toFixed(0)}km<br>` +
-                        new Date(time).toLocaleString("ko-KR")
-                    );
-                }
-
-                const s = strongest && strongest.properties;
-                stats.innerHTML = `총 <b>${data.features.length}</b>건` +
-                    (s ? ` · 가장 큰 지진 <b>규모 ${s.mag}</b> (${s.place})` : "") +
-                    ` · 갱신 ${new Date().toLocaleTimeString("ko-KR")}`;
-            } catch (e) {
-                stats.textContent = "데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
+        function plot(spots) {
+            layer.clearLayers();
+            const points = [];
+            for (const s of spots) {
+                const c = CENTERS[s.area];
+                if (!c) continue;
+                const p = [c[0] + jitter(s.name, 1), c[1] + jitter(s.name, 2)];
+                points.push(p);
+                L.marker(p).addTo(layer).bindPopup(
+                    `<b>${s.name}</b><br>${s.area} · ${s.indoor ? "실내" : "야외"}<br>${s.description}`);
             }
+            if (points.length) map.fitBounds(points, { padding: [40, 40] });
         }
 
-        document.getElementById("feed").addEventListener("change", load);
-        document.getElementById("reload").addEventListener("click", load);
-        setInterval(load, 5 * 60 * 1000);  // 5분마다 자동 갱신
-        load();
+        const log = document.getElementById("log");
+        const history = [];
+
+        function add(cls, text) {
+            const d = document.createElement("div");
+            d.className = "msg " + cls;
+            d.textContent = text;
+            log.appendChild(d);
+            log.scrollTop = log.scrollHeight;
+            return d;
+        }
+
+        document.getElementById("form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const input = document.getElementById("q");
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = "";
+            add("user", text);
+            history.push({ role: "user", content: text });
+            const wait = add("bot", "날씨와 장소를 찾는 중…");
+
+            try {
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ messages: history }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || res.status);
+
+                wait.textContent = data.reply;
+                history.push({ role: "assistant", content: data.reply });
+                if (data.toolLog.length) {
+                    const t = document.createElement("div");
+                    t.className = "tools";
+                    t.textContent = "🔧 사용한 도구: " + data.toolLog
+                        .map((x) => `${x.name}(${Object.values(x.input).join(", ")})`).join(" → ");
+                    log.appendChild(t);
+                }
+                plot(data.spots);
+            } catch (err) {
+                wait.textContent = "오류: " + err.message;
+                history.pop();
+            }
+            log.scrollTop = log.scrollHeight;
+        });
     </script>
 </body>
 </html>
