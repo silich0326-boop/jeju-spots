@@ -1,6 +1,6 @@
 const { toolDefinitions, toolHandlers } = require("./tools.js");
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.8-flash";
 const MAX_STEPS = 6; // 도구 호출 왕복 최대 횟수
 
 const SYSTEM = `너는 제주 여행 추천 도우미다.
