@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <script>
+        let v = []
+        for (let i = 1; i <= 100; i++){
+            v.push(i)
+        }  // [1, 2, ..., 100]
+        let data = {}
+        for (const n of v){
+            // "a1"~"a100" 키, 배열 길이는 키마다 다름 (a1=101개, a2=102개, ... a100=200개)
+            data["a" + n] = Array.from({length: 100 + n}, (_, j) => n * 1000 + j)
+        }
+        const show = (id) => console.log(id+ "를 보여줘")
+        for (const key of Object.keys(data)){
+            const element = data[key]
+            console.log(element+"\n")
+            show(element)
+        }
+
+    </script>
+</body>
+</html>
